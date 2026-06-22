@@ -1,0 +1,64 @@
+# ============================================================
+# 투자 결정 보조 앱 설정 파일
+# ============================================================
+
+portfolio:
+  domestic:
+    - ticker: "005930"
+      name: "삼성전자"
+    - ticker: "000660"
+      name: "SK하이닉스"
+    - ticker: "012330"
+      name: "현대모비스"
+    - ticker: "267260"
+      name: "현대일렉트릭"
+    - ticker: "011070"
+      name: "LG이노텍"
+    - ticker: "042700"
+      name: "한미반도체"
+    - ticker: "036930"
+      name: "주성엔지니어링"
+    - ticker: "066570"
+      name: "LG전자"
+    - ticker: "307950"
+      name: "현대오토에버"
+
+  foreign:
+    - ticker: "SOXL"
+      name: "SOXL(반도체3X)"
+    - ticker: "KORU"
+      name: "KORU(한국3X)"
+
+alerts:
+  rsi_oversold: 30
+  rsi_overbought: 70
+  bb_touch_lower: true
+  bb_touch_upper: true
+  ma_cross: true
+  min_signals_to_notify: 2   # 신호 2개 이상일 때만 알림 (과다 알림 방지)
+
+schedule:
+  # 아침 브리핑: 8시 - 해외선물/미국시황 + 관련주 등락 예상
+  morning_brief: "08:00"
+  # 장전 주문 알림: 8시50분 - 예약주문 진입가 포함 우선순위 알림
+  pre_market_brief: "08:50"
+  # 장중: 매수/매도 신호 발생 시만 (10분마다 체크, 알림은 신호 있을 때만)
+  interval_minutes: 10
+  market_open:  "09:00"
+  market_close: "15:30"
+  # 장마감 전 브리핑: 15:20 - 다음날 뉴스예상 + 주가 전망
+  eod_brief: "15:20"
+
+telegram:
+  bot_token: "8786934318:AAEoJOzOgHRL4gQfhqRWL0C2rrx2VWkwkL8"
+  chat_id: "8920068374"
+
+kis:
+  app_key: ""
+  app_secret: ""
+  account_no: ""
+  mock: true
+
+claude:
+  api_key: ""
+  model: "claude-haiku-4-5-20251001"

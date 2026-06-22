@@ -1,0 +1,21 @@
+# 설정 및 캐시
+beta_cache.json
+seen_news.json
+signals_log.csv
+bot_log.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+
+# 가상환경
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
