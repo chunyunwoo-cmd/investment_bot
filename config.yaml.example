@@ -1,0 +1,66 @@
+# ============================================================
+# 투자 결정 보조 앱 설정 파일
+# 이 파일을 복사해서 config.yaml 로 저장 후 값을 채우세요
+# cp config.yaml.example config.yaml
+# ============================================================
+
+portfolio:
+  domestic:
+    - ticker: "005930"
+      name: "삼성전자"
+    - ticker: "000660"
+      name: "SK하이닉스"
+    - ticker: "009150"
+      name: "삼성전기"
+    - ticker: "034730"
+      name: "SK"
+    - ticker: "012330"
+      name: "현대모비스"
+    - ticker: "267260"
+      name: "현대일렉트릭"
+    - ticker: "011070"
+      name: "LG이노텍"
+    - ticker: "042700"
+      name: "한미반도체"
+    - ticker: "036930"
+      name: "주성엔지니어링"
+    - ticker: "066570"
+      name: "LG전자"
+    - ticker: "307950"
+      name: "현대오토에버"
+
+  foreign:
+    - ticker: "SOXL"
+      name: "SOXL(반도체3X)"
+    - ticker: "KORU"
+      name: "KORU(한국3X)"
+
+alerts:
+  rsi_oversold: 30
+  rsi_overbought: 70
+  bb_touch_lower: true
+  bb_touch_upper: true
+  ma_cross: true
+  min_signals_to_notify: 2
+
+schedule:
+  morning_brief: "07:50"
+  pre_market_brief: "08:50"
+  interval_minutes: 10
+  market_open:  "09:00"
+  market_close: "15:30"
+  eod_brief: "15:20"
+
+telegram:
+  bot_token: ""   # 텔레그램 BotFather에서 발급
+  chat_id: ""     # 텔레그램 채팅 ID
+
+kis:
+  app_key: ""     # apiportal.koreainvestment.com 에서 발급
+  app_secret: ""
+  account_no: ""  # 예: 68XXXXXX-01
+  mock: true      # 모의투자: true / 실전: false
+
+claude:
+  api_key: ""     # console.anthropic.com 에서 발급 (없어도 규칙 기반으로 동작)
+  model: "claude-haiku-4-5-20251001"

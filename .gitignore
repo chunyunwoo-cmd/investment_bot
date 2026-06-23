@@ -1,4 +1,5 @@
-# 설정 및 캐시
+# 설정 및 캐시 (민감정보 포함 - 절대 커밋 금지)
+config.yaml
 beta_cache.json
 seen_news.json
 signals_log.csv

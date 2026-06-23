@@ -100,6 +100,70 @@ def get_portfolio_news(portfolio: list, hours_limit: int = 12) -> dict:
     _save_seen(seen)
     return all_news
 
+def get_market_events() -> list:
+    """국내외 주요 경제 일정 뉴스 수집 (48시간 이내)"""
+    queries = [
+        ("FOMC 금리 결정 발표 일정", 'en'),
+        ("한국은행 금통위 기준금리 결정", 'ko'),
+        ("미국 CPI 소비자물가 발표", 'ko'),
+        ("미국 고용지표 실업률 비농업 발표", 'ko'),
+        ("GDP 성장률 발표 경제지표", 'ko'),
+        ("증시 주요 일정 이번주", 'ko'),
+    ]
+    events = []
+    seen = set()
+    for query, lang in queries:
+        news = fetch_google_news(query, lang=lang, max_items=2, hours_limit=48)
+        for n in news:
+            nid = _news_id(n['title'])
+            if nid not in seen:
+                seen.add(nid)
+                events.append(n)
+    return events
+
+
+# 경제 일정 → 증시 영향 키워드 매핑
+_EVENT_IMPACT = {
+    'FOMC':    ('🏦 FOMC 금리 결정', '금리 동결→호재 / 인상→악재'),
+    '금통위':   ('🏦 한국은행 금통위',  '금리 동결→호재 / 인상→악재'),
+    'CPI':     ('📊 CPI 물가지수',    '예상치 하회→호재 / 상회→악재'),
+    '고용':     ('👷 고용지표',        '호조→증시 혼재 / 부진→악재'),
+    '실업률':   ('👷 실업률 발표',     '하락→호재 / 상승→악재'),
+    'GDP':     ('📈 GDP 성장률',      '예상치 상회→호재 / 하회→악재'),
+    '비농업':   ('👷 비농업 고용',     '호조→증시 혼재 / 부진→악재'),
+    '기준금리':  ('🏦 기준금리 결정',  '동결→호재 / 인상→악재'),
+}
+
+def classify_event_impact(title: str) -> str:
+    """뉴스 제목에서 경제 이벤트 종류와 증시 영향 분류"""
+    for keyword, (label, impact) in _EVENT_IMPACT.items():
+        if keyword.lower() in title.lower():
+            return f"{label} — {impact}"
+    return ''
+
+
+def get_surge_candidates(hours_limit: int = 12) -> list:
+    """시장 큰 뉴스 기반 급등 예상 종목 후보 수집"""
+    queries = [
+        ("주식 급등 호재 오늘 뉴스", 'ko'),
+        ("코스피 급등 종목 수급 뉴스", 'ko'),
+        ("반도체 바이오 급등 이슈 오늘", 'ko'),
+        ("stock surge catalyst earnings today", 'en'),
+        ("semiconductor AI rally news today", 'en'),
+    ]
+    candidates = []
+    seen = set()
+    for query, lang in queries:
+        news = fetch_google_news(query, lang=lang, max_items=3, hours_limit=hours_limit)
+        for n in news:
+            if n['sentiment']['score'] > 0:   # 긍정 뉴스만
+                nid = _news_id(n['title'])
+                if nid not in seen:
+                    seen.add(nid)
+                    candidates.append(n)
+    return candidates[:6]
+
+
 def get_sentiment_summary(news_list: list) -> dict:
     """뉴스 목록의 감성 요약"""
     if not news_list:

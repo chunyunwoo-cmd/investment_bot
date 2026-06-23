@@ -4,6 +4,7 @@ import yfinance as yf
 import pandas as pd
 import pandas_ta as ta
 import numpy as np
+import requests, yaml, os
 from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
@@ -13,6 +14,87 @@ try:
     PYKRX_AVAILABLE = True
 except ImportError:
     PYKRX_AVAILABLE = False
+
+# ── KIS 실시간 시세 ──────────────────────────────────────────
+
+_KIS_TOKEN = None
+_KIS_TOKEN_EXPIRES = None
+
+def _load_kis_config() -> dict:
+    p = os.path.join(os.path.dirname(__file__), '..', 'config.yaml')
+    with open(p, encoding='utf-8') as f:
+        cfg = yaml.safe_load(f)
+    return cfg.get('kis', {})
+
+def _get_kis_token() -> str:
+    global _KIS_TOKEN, _KIS_TOKEN_EXPIRES
+    if _KIS_TOKEN and _KIS_TOKEN_EXPIRES and datetime.now() < _KIS_TOKEN_EXPIRES:
+        return _KIS_TOKEN
+    kis = _load_kis_config()
+    if not kis.get('app_key') or not kis.get('app_secret'):
+        return ''
+    base = 'https://openapivts.koreainvestment.com:29443' if kis.get('mock') else \
+           'https://openapi.koreainvestment.com:9443'
+    resp = requests.post(f"{base}/oauth2/tokenP", json={
+        'grant_type':   'client_credentials',
+        'appkey':       kis['app_key'],
+        'appsecret':    kis['app_secret'],
+    }, timeout=10)
+    if resp.status_code != 200:
+        return ''
+    data = resp.json()
+    _KIS_TOKEN = data.get('access_token', '')
+    expires_in = int(data.get('expires_in', 86400))
+    _KIS_TOKEN_EXPIRES = datetime.now() + timedelta(seconds=expires_in - 60)
+    return _KIS_TOKEN
+
+def get_kis_realtime_price(ticker: str) -> dict:
+    """KIS API로 국내 종목 실시간 현재가 조회"""
+    kis = _load_kis_config()
+    if not kis.get('app_key'):
+        return {}
+    token = _get_kis_token()
+    if not token:
+        return {}
+    base = 'https://openapivts.koreainvestment.com:29443' if kis.get('mock') else \
+           'https://openapi.koreainvestment.com:9443'
+    headers = {
+        'authorization': f'Bearer {token}',
+        'appkey':        kis['app_key'],
+        'appsecret':     kis['app_secret'],
+        'tr_id':         'FHKST01010100',
+        'content-type':  'application/json; charset=utf-8',
+    }
+    params = {
+        'FID_COND_MRKT_DIV_CODE': 'J',
+        'FID_INPUT_ISCD': ticker,
+    }
+    try:
+        resp = requests.get(f"{base}/uapi/domestic-stock/v1/quotations/inquire-price",
+                            headers=headers, params=params, timeout=10)
+        if resp.status_code != 200:
+            return {}
+        out = resp.json().get('output', {})
+        price      = int(out.get('stck_prpr', 0))
+        prev_close = int(out.get('stck_sdpr', 0))
+        change_pct = float(out.get('prdy_ctrt', 0))
+        volume     = int(out.get('acml_vol', 0))
+        prev_vol   = int(out.get('prdy_vol', 0))
+        if price == 0:
+            return {}
+        return {
+            'ticker':      ticker,
+            'price':       price,
+            'prev_close':  prev_close,
+            'change_pct':  change_pct,
+            'volume':      volume,
+            'prev_volume': prev_vol,
+            'date':        datetime.now().strftime('%Y-%m-%d'),
+            'source':      'KIS실시간',
+        }
+    except Exception as e:
+        print(f"[KIS] {ticker} 오류: {e}", flush=True)
+        return {}
 
 # ── 데이터 수집 ──────────────────────────────────────────────
 
@@ -48,6 +130,11 @@ def get_foreign_data(ticker: str, period: str = '6mo') -> pd.DataFrame:
 
 def get_current_price(ticker: str, is_domestic: bool) -> dict:
     if is_domestic:
+        # KIS 실시간 시세 우선 시도
+        kis_data = get_kis_realtime_price(ticker)
+        if kis_data:
+            return kis_data
+        # fallback: pykrx 전일 종가
         df = get_domestic_data(ticker, period_days=10)
         if df.empty:
             return {}
@@ -65,6 +152,7 @@ def get_current_price(ticker: str, is_domestic: bool) -> dict:
             'volume':       int(row['Volume']),
             'prev_volume':  int(prev['Volume']),
             'date':         df.index[-1].strftime('%Y-%m-%d'),
+            'source':       'pykrx',
         }
     else:
         hist = yf.Ticker(ticker).history(period='5d')

@@ -13,7 +13,8 @@ from agents.data_agent        import (get_domestic_data, get_foreign_data, add_i
                                       get_sl_tp, get_pivot_levels, get_entry_price,
                                       nearest_support, nearest_resistance, round_to_tick)
 from agents.news_agent        import (get_portfolio_news, fetch_google_news,
-                                      get_sentiment_summary)
+                                      get_sentiment_summary, get_market_events,
+                                      classify_event_impact, get_surge_candidates)
 from agents.decision_agent    import get_decision
 from agents.notify_agent      import send_telegram
 from agents.correlation_agent import compute_betas, estimate_open_move, get_etf_overnight
@@ -178,6 +179,19 @@ def morning_brief(cfg):
                 tp_p = r['sltp']['tp_pct']
                 rr   = r['sltp']['rr']
                 L.append(f"     └ 손절 {sl_p:+.1f}% / 목표 {tp_p:+.1f}% (R:R={rr})")
+
+    # ⑤ 오늘/내일 국내외 경제 일정
+    events = get_market_events()
+    if events:
+        L.append("\n⑤ 주요 경제 일정 (48h 이내)")
+        for n in events[:5]:
+            impact = classify_event_impact(n['title'])
+            age_str = f"{n['age_hours']:.0f}h전" if n['age_hours'] < 24 else f"{int(n['age_hours']/24)}일전"
+            if impact:
+                L.append(f"  • {n['title'][:55]}  [{age_str}]")
+                L.append(f"    └ {impact}")
+            else:
+                L.append(f"  • {n['title'][:60]}  [{age_str}]")
 
     L.append("\n━" * 16)
     L.append("📌 08:50 예약주문 알림 예정 | 09:00 장 시작")
@@ -464,8 +478,28 @@ def eod_brief(cfg):
     if '건' in acc:
         L.append(f"\n④ 최근 신호 성과\n  {acc}")
 
+    # ⑤ 내일 국내외 경제 일정 + 증시 영향
+    events = get_market_events()
+    if events:
+        L.append("\n⑤ 내일 주요 경제 일정")
+        for n in events[:5]:
+            impact = classify_event_impact(n['title'])
+            age_str = f"{n['age_hours']:.0f}h전" if n['age_hours'] < 24 else f"{int(n['age_hours']/24)}일전"
+            icon = '📈' if n['sentiment']['score'] > 0 else ('📉' if n['sentiment']['score'] < 0 else '📅')
+            L.append(f"  {icon} {n['title'][:55]}  [{age_str}]")
+            if impact:
+                L.append(f"     └ 증시영향: {impact}")
+
+    # ⑥ 급등 예상 후보 (큰 뉴스 있는 종목)
+    surge = get_surge_candidates(hours_limit=12)
+    if surge:
+        L.append(f"\n⑥ 내일 급등 후보 뉴스 ({len(surge)}건)")
+        for n in surge[:5]:
+            L.append(f"  🚀 {n['title'][:65]}")
+            L.append(f"     └ {n['age_hours']:.0f}시간 전 | {n['sentiment']['label']}")
+
     L.append("\n━" * 16)
-    L.append("📌 내일 08:00 아침브리핑 | 08:50 예약주문 알림")
+    L.append("📌 내일 07:50 아침브리핑 | 08:50 예약주문 알림")
     tg(cfg, '\n'.join(L))
     print("  장마감 브리핑 완료", flush=True)
 
