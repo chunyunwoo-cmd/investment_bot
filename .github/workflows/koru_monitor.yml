@@ -1,0 +1,51 @@
+name: KORU 모니터 (10분 자동 체크)
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'   # 매 10분 (UTC 기준)
+  workflow_dispatch:           # GitHub 웹에서 수동 실행 가능
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 패키지 설치
+        run: pip install yfinance pandas pandas-ta numpy requests pyyaml
+
+      # 이전 실행의 상태 파일 복원 (중복 알림 방지)
+      - name: 이전 상태 복원
+        uses: actions/cache@v4
+        with:
+          path: koru_state.json
+          key: koru-state-${{ github.run_number }}
+          restore-keys: |
+            koru-state-
+
+      - name: KORU 모니터 실행
+        env:
+          KIS_APP_KEY:    ${{ secrets.KIS_APP_KEY }}
+          KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+          KIS_ACCOUNT_NO: ${{ secrets.KIS_ACCOUNT_NO }}
+          KIS_MOCK:       ${{ secrets.KIS_MOCK }}
+          TG_BOT_TOKEN:   ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID:     ${{ secrets.TG_CHAT_ID }}
+          KORU_AVG_COST:  ${{ secrets.KORU_AVG_COST }}
+        run: python koru_monitor_gha.py
+
+      # 상태 파일 저장 (다음 실행에서 복원)
+      - name: 상태 저장
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: koru_state.json
+          key: koru-state-${{ github.run_number }}
