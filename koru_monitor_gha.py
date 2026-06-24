@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 
 import yfinance as yf
 import pandas as pd
-import pandas_ta as ta
 import numpy as np
 
 # ── 설정 (환경변수 우선, 없으면 기본값) ──────────────────────
@@ -122,6 +121,47 @@ def get_yf_price(ticker: str) -> dict:
         print(f"yfinance 오류: {e}", flush=True)
         return {}
 
+# ── 순수 pandas 지표 계산 (pandas-ta 불필요) ──────────────────
+def _rsi(close: pd.Series, n=14) -> pd.Series:
+    delta = close.diff()
+    gain  = delta.clip(lower=0).ewm(alpha=1/n, adjust=False).mean()
+    loss  = (-delta.clip(upper=0)).ewm(alpha=1/n, adjust=False).mean()
+    rs    = gain / loss.replace(0, np.nan)
+    return 100 - 100 / (1 + rs)
+
+def _macd(close: pd.Series):
+    ema12 = close.ewm(span=12, adjust=False).mean()
+    ema26 = close.ewm(span=26, adjust=False).mean()
+    macd  = ema12 - ema26
+    sig   = macd.ewm(span=9, adjust=False).mean()
+    return macd - sig   # histogram
+
+def _bbands(close: pd.Series, n=20):
+    mid = close.rolling(n).mean()
+    std = close.rolling(n).std()
+    return mid - 2*std, mid + 2*std   # lower, upper
+
+def _adx(high, low, close, n=14) -> pd.Series:
+    tr  = pd.concat([high - low,
+                     (high - close.shift()).abs(),
+                     (low  - close.shift()).abs()], axis=1).max(axis=1)
+    dm_plus  = (high - high.shift()).clip(lower=0)
+    dm_minus = (low.shift() - low).clip(lower=0)
+    dm_plus  = dm_plus.where(dm_plus > dm_minus, 0)
+    dm_minus = dm_minus.where(dm_minus > dm_plus, 0)
+    atr      = tr.ewm(alpha=1/n, adjust=False).mean()
+    di_plus  = 100 * dm_plus.ewm(alpha=1/n, adjust=False).mean() / atr.replace(0, np.nan)
+    di_minus = 100 * dm_minus.ewm(alpha=1/n, adjust=False).mean() / atr.replace(0, np.nan)
+    dx       = 100 * (di_plus - di_minus).abs() / (di_plus + di_minus).replace(0, np.nan)
+    return dx.ewm(alpha=1/n, adjust=False).mean()
+
+def _stoch(high, low, close, k=14, d=3):
+    lo = low.rolling(k).min()
+    hi = high.rolling(k).max()
+    k_line = 100 * (close - lo) / (hi - lo).replace(0, np.nan)
+    d_line = k_line.rolling(d).mean()
+    return k_line, d_line
+
 # ── 기술적 지표 + 점수 ─────────────────────────────────────────
 def get_tech_score(ticker: str) -> dict:
     try:
@@ -131,87 +171,66 @@ def get_tech_score(ticker: str) -> dict:
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
-        df.ta.rsi(length=14, append=True)
-        df.ta.macd(fast=12, slow=26, signal=9, append=True)
-        df.ta.bbands(length=20, std=2, append=True)
-        df.ta.sma(length=5, append=True)
-        df.ta.sma(length=20, append=True)
-        df.ta.sma(length=60, append=True)
-        df.ta.adx(length=14, append=True)
-        df.ta.stoch(k=14, d=3, append=True)
-        df["VOL_MA20"]  = df["Volume"].rolling(20).mean()
-        df["VOL_RATIO"] = df["Volume"] / df["VOL_MA20"].replace(0, np.nan)
+        close, high, low = df["Close"], df["High"], df["Low"]
 
-        last = df.iloc[-1]
-        prev = df.iloc[-2]
-        score = 0
-        signals = []
+        rsi_s  = _rsi(close)
+        macdh  = _macd(close)
+        bb_l, bb_u = _bbands(close)
+        sma5   = close.rolling(5).mean()
+        sma20  = close.rolling(20).mean()
+        sma60  = close.rolling(60).mean()
+        adx_s  = _adx(high, low, close)
+        stk_k, stk_d = _stoch(high, low, close)
 
-        rsi_col  = next((c for c in df.columns if "RSI_14" in c), None)
-        hist_col = next((c for c in df.columns if c.startswith("MACDh_")), None)
-        bbl      = next((c for c in df.columns if "BBL_" in c), None)
-        bbu      = next((c for c in df.columns if "BBU_" in c), None)
-        adx_col  = next((c for c in df.columns if c.startswith("ADX_")), None)
-        stk      = next((c for c in df.columns if c.startswith("STOCHk_")), None)
-        std      = next((c for c in df.columns if c.startswith("STOCHd_")), None)
+        last_i = -1
+        prev_i = -2
 
-        adx = float(last.get(adx_col, 0) or 0) if adx_col else 0
+        rsi   = float(rsi_s.iloc[last_i])
+        h     = float(macdh.iloc[last_i])
+        ph    = float(macdh.iloc[prev_i])
+        bbl_v = float(bb_l.iloc[last_i])
+        bbu_v = float(bb_u.iloc[last_i])
+        c     = float(close.iloc[last_i])
+        s5    = float(sma5.iloc[last_i]);  p5  = float(sma5.iloc[prev_i])
+        s20   = float(sma20.iloc[last_i]); p20 = float(sma20.iloc[prev_i])
+        s60   = float(sma60.iloc[last_i])
+        adx   = float(adx_s.iloc[last_i]) if not np.isnan(adx_s.iloc[last_i]) else 0
+        k_v   = float(stk_k.iloc[last_i]); pk  = float(stk_k.iloc[prev_i])
+        d_v   = float(stk_d.iloc[last_i])
+
         adx_mult = 1.2 if adx >= 30 else (1.0 if adx >= 20 else 0.7)
+        score, signals = 0, []
 
-        if rsi_col and pd.notna(last.get(rsi_col)):
-            rsi = float(last[rsi_col])
-            if rsi <= 30:
-                score += int(25 * adx_mult); signals.append(("BUY", f"RSI 과매도 ({rsi:.1f})"))
-            elif rsi >= 70:
-                score -= int(25 * adx_mult); signals.append(("SELL", f"RSI 과매수 ({rsi:.1f})"))
+        # RSI
+        if not np.isnan(rsi):
+            if rsi <= 30:   score += int(25 * adx_mult); signals.append(("BUY",  f"RSI 과매도 ({rsi:.1f})"))
+            elif rsi >= 70: score -= int(25 * adx_mult); signals.append(("SELL", f"RSI 과매수 ({rsi:.1f})"))
 
-        if hist_col:
-            h = float(last.get(hist_col, 0) or 0)
-            ph = float(prev.get(hist_col, 0) or 0)
-            if h > 0 and ph <= 0:
-                score += int(20 * adx_mult); signals.append(("BUY", "MACD 상향 반전"))
-            elif h < 0 and ph >= 0:
-                score -= int(20 * adx_mult); signals.append(("SELL", "MACD 하향 반전"))
-            elif h > 0:
-                score += int(10 * adx_mult)
-            else:
-                score -= int(10 * adx_mult)
+        # MACD 히스토그램
+        if h > 0 and ph <= 0: score += int(20 * adx_mult); signals.append(("BUY",  "MACD 상향 반전"))
+        elif h < 0 and ph >= 0: score -= int(20 * adx_mult); signals.append(("SELL", "MACD 하향 반전"))
+        elif h > 0: score += int(10 * adx_mult)
+        else:       score -= int(10 * adx_mult)
 
-        if bbl and bbu:
-            l, u = float(last[bbl]), float(last[bbu])
-            c = float(last["Close"])
-            if c <= l * 1.005:
-                score += 15; signals.append(("BUY", "볼린저 하단 이탈"))
-            elif c >= u * 0.995:
-                score -= 15; signals.append(("SELL", "볼린저 상단 이탈"))
+        # 볼린저
+        if c <= bbl_v * 1.005: score += 15; signals.append(("BUY",  "볼린저 하단 이탈"))
+        elif c >= bbu_v * 0.995: score -= 15; signals.append(("SELL", "볼린저 상단 이탈"))
 
-        s5  = float(last.get("SMA_5",  0) or 0)
-        s20 = float(last.get("SMA_20", 0) or 0)
-        s60 = float(last.get("SMA_60", 0) or 0)
-        p5  = float(prev.get("SMA_5",  0) or 0)
-        p20 = float(prev.get("SMA_20", 0) or 0)
-        if s5 > 0 and s20 > 0 and s60 > 0:
-            if s5 > s20 > s60:   score += int(20 * adx_mult)
-            elif s5 < s20 < s60: score -= int(20 * adx_mult)
-        if p5 <= p20 and s5 > s20:
-            signals.append(("BUY", "골든크로스"))
-        elif p5 >= p20 and s5 < s20:
-            signals.append(("SELL", "데드크로스"))
+        # MA 배열
+        if s5 > s20 > s60:   score += int(20 * adx_mult)
+        elif s5 < s20 < s60: score -= int(20 * adx_mult)
+        if p5 <= p20 and s5 > s20: signals.append(("BUY",  "골든크로스"))
+        elif p5 >= p20 and s5 < s20: signals.append(("SELL", "데드크로스"))
 
-        if stk and std:
-            k  = float(last.get(stk, 50) or 50)
-            d  = float(last.get(std, 50) or 50)
-            pk = float(prev.get(stk, 50) or 50)
-            if k < 20 and k > d and pk <= d:
-                score += 10; signals.append(("BUY", f"스토캐스틱 과매도 반전 (K={k:.0f})"))
-            elif k > 80 and k < d and pk >= d:
-                score -= 10; signals.append(("SELL", f"스토캐스틱 과매수 반전 (K={k:.0f})"))
+        # 스토캐스틱
+        if k_v < 20 and k_v > d_v and pk <= d_v: score += 10; signals.append(("BUY",  f"스토캐스틱 과매도 반전 (K={k_v:.0f})"))
+        elif k_v > 80 and k_v < d_v and pk >= d_v: score -= 10; signals.append(("SELL", f"스토캐스틱 과매수 반전 (K={k_v:.0f})"))
 
         return {
             "score":   max(-100, min(100, score)),
             "signals": signals,
             "adx":     round(adx, 1),
-            "rsi":     round(float(last[rsi_col]), 1) if rsi_col and pd.notna(last.get(rsi_col)) else 0,
+            "rsi":     round(rsi, 1) if not np.isnan(rsi) else 0,
         }
     except Exception as e:
         print(f"기술적 분석 오류: {e}", flush=True)

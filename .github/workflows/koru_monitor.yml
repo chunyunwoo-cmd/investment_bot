@@ -20,7 +20,7 @@ jobs:
           cache: 'pip'
 
       - name: 패키지 설치
-        run: pip install yfinance pandas pandas-ta numpy requests pyyaml
+        run: pip install yfinance pandas numpy requests pyyaml
 
       # 이전 실행의 상태 파일 복원 (중복 알림 방지)
       - name: 이전 상태 복원
