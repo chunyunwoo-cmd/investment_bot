@@ -33,6 +33,8 @@ jobs:
           TG_BOT_TOKEN:   ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID:     ${{ secrets.TG_CHAT_ID }}
           KORU_AVG_COST:  ${{ secrets.KORU_AVG_COST }}
+          PYTHONUTF8:     "1"
+          PYTHONIOENCODING: "utf-8"
         run: python market_bot_gha.py
 
       - name: 상태 저장

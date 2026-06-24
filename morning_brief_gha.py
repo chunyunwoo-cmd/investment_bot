@@ -3,9 +3,10 @@
 morning_brief_gha.py — 매일 07:50 KST 아침 브리핑
 간밤 미국 시황 + 전 종목 점수 + 뉴스 + 오늘 일정
 """
-import os, requests, sys
+import os, requests, sys, json
 from datetime import datetime, timezone, timedelta
 import xml.etree.ElementTree as ET
+sys.stdout.reconfigure(encoding='utf-8')
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -28,14 +29,24 @@ WATCHLIST = {
 def tg(msg: str):
     if not TG_TOKEN:
         print(msg, flush=True); return
-    try:
-        requests.post(
-            f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
-            json={"chat_id": TG_CHAT, "text": msg, "parse_mode": "Markdown"},
-            timeout=10,
-        )
-    except Exception as e:
-        print(f"TG 오류: {e}", flush=True)
+    # 텔레그램 최대 4096자 제한 → 초과 시 분할
+    chunks = [msg[i:i+4000] for i in range(0, len(msg), 4000)]
+    for chunk in chunks:
+        try:
+            payload = json.dumps(
+                {"chat_id": TG_CHAT, "text": chunk, "parse_mode": "Markdown"},
+                ensure_ascii=False
+            ).encode("utf-8")
+            r = requests.post(
+                f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
+                data=payload,
+                headers={"Content-Type": "application/json; charset=utf-8"},
+                timeout=10,
+            )
+            if not r.ok:
+                print(f"TG 오류: {r.status_code} {r.text[:100]}", flush=True)
+        except Exception as e:
+            print(f"TG 예외: {e}", flush=True)
 
 def _rsi(c, n=14):
     d = c.diff(); g = d.clip(lower=0).ewm(alpha=1/n, adjust=False).mean()

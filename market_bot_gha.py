@@ -5,6 +5,7 @@ market_bot_gha.py — GitHub Actions 투자봇 (5분마다 실행)
 의존성: yfinance pandas numpy requests (pandas-ta 불필요)
 """
 import os, json, sys, requests, re
+sys.stdout.reconfigure(encoding='utf-8')
 from datetime import datetime, timezone, timedelta
 import xml.etree.ElementTree as ET
 import yfinance as yf
@@ -79,14 +80,23 @@ def tg_send(msg: str, chat_id: str = None):
         print(f"[TG] {msg[:80]}", flush=True)
         return
     cid = chat_id or TG_CHAT
-    try:
-        requests.post(
-            f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
-            json={"chat_id": cid, "text": msg, "parse_mode": "Markdown"},
-            timeout=10,
-        )
-    except Exception as e:
-        print(f"TG 오류: {e}", flush=True)
+    chunks = [msg[i:i+4000] for i in range(0, len(msg), 4000)]
+    for chunk in chunks:
+        try:
+            payload = json.dumps(
+                {"chat_id": cid, "text": chunk, "parse_mode": "Markdown"},
+                ensure_ascii=False
+            ).encode("utf-8")
+            r = requests.post(
+                f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
+                data=payload,
+                headers={"Content-Type": "application/json; charset=utf-8"},
+                timeout=10,
+            )
+            if not r.ok:
+                print(f"TG 오류: {r.status_code} {r.text[:100]}", flush=True)
+        except Exception as e:
+            print(f"TG 예외: {e}", flush=True)
 
 def tg_get_updates(offset: int) -> list:
     if not TG_TOKEN:
