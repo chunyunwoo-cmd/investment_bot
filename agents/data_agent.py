@@ -130,11 +130,19 @@ def get_foreign_data(ticker: str, period: str = '6mo') -> pd.DataFrame:
 
 def get_current_price(ticker: str, is_domestic: bool) -> dict:
     if is_domestic:
-        # KIS 실시간 시세 우선 시도
+        # 1순위: KIS 실시간
         kis_data = get_kis_realtime_price(ticker)
         if kis_data:
             return kis_data
-        # fallback: pykrx 전일 종가
+        # 2순위: playwright → 네이버 금융 실시간
+        try:
+            from agents.playwright_agent import get_naver_price
+            pw_data = get_naver_price(ticker)
+            if pw_data:
+                return pw_data
+        except Exception:
+            pass
+        # 3순위: pykrx 전일 종가
         df = get_domestic_data(ticker, period_days=10)
         if df.empty:
             return {}
@@ -155,21 +163,30 @@ def get_current_price(ticker: str, is_domestic: bool) -> dict:
             'source':       'pykrx',
         }
     else:
+        # 1순위: yfinance
         hist = yf.Ticker(ticker).history(period='5d')
-        if hist.empty:
-            return {}
-        close      = float(hist['Close'].iloc[-1])
-        prev_close = float(hist['Close'].iloc[-2]) if len(hist) > 1 else close
-        chg        = (close - prev_close) / prev_close * 100
-        return {
-            'ticker':      ticker,
-            'price':       round(close, 2),
-            'prev_close':  round(prev_close, 2),
-            'change_pct':  round(chg, 2),
-            'volume':      int(hist['Volume'].iloc[-1]),
-            'prev_volume': int(hist['Volume'].iloc[-2]) if len(hist) > 1 else 0,
-            'date':        hist.index[-1].strftime('%Y-%m-%d'),
-        }
+        if not hist.empty:
+            close      = float(hist['Close'].iloc[-1])
+            prev_close = float(hist['Close'].iloc[-2]) if len(hist) > 1 else close
+            chg        = (close - prev_close) / prev_close * 100
+            return {
+                'ticker':      ticker,
+                'price':       round(close, 2),
+                'prev_close':  round(prev_close, 2),
+                'change_pct':  round(chg, 2),
+                'volume':      int(hist['Volume'].iloc[-1]),
+                'prev_volume': int(hist['Volume'].iloc[-2]) if len(hist) > 1 else 0,
+                'date':        hist.index[-1].strftime('%Y-%m-%d'),
+            }
+        # 2순위: playwright → 야후 파이낸스 실시간
+        try:
+            from agents.playwright_agent import get_yahoo_price
+            pw_data = get_yahoo_price(ticker)
+            if pw_data:
+                return pw_data
+        except Exception:
+            pass
+        return {}
 
 # ── 한국 주식 호가 단위 ──────────────────────────────────────
 

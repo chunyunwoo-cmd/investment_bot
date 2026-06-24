@@ -4,6 +4,8 @@ beta_cache.json
 seen_news.json
 signals_log.csv
 bot_log.txt
+koru_monitor_log.txt
+koru_monitor_err.txt
 
 # Python
 __pycache__/
