@@ -121,7 +121,7 @@ def main():
     dt_str  = now_kst.strftime("%m/%d(%a)")
     print(f"[{now_kst.strftime('%H:%M')} KST] 아침 브리핑 시작", flush=True)
 
-    lines = [f"🌅 *[아침 브리핑] {dt_str} 07:50*", "━"*32]
+    lines = [f"🌅 *[아침 브리핑] {dt_str} 07:50*"]
 
     # ① 간밤 미국 ETF
     lines.append("\n① 간밤 미국 시황")
@@ -144,7 +144,7 @@ def main():
         lines.append(f"  📰 {n[:65]}")
 
     # ③ 전 종목 점수 스캔
-    lines.append("\n③ 종목 스캔 (점수 순)")
+    lines.append("\n③ 종목 스캔  [점수 기준: +40이상=강매수 / +30=매수 / -30=매도 / -40이하=강매도 / 나머지=관망]")
     results = []
     for ticker, name in WATCHLIST.items():
         print(f"  [{name}]...", flush=True)
@@ -157,8 +157,8 @@ def main():
         icon = {"BUY":"📈","SELL":"📉","HOLD":"➖"}.get(r["action"],"➖")
         is_usd = not ticker.endswith(".KS")
         price_str = f"${r['price']:.2f}" if is_usd else f"{int(r['price']):,}원"
-        score_bar = ("+" if r["score"]>=0 else "") + str(r["score"])
-        lines.append(f"  {icon} {name}: {score_bar}점  {price_str} ({r['chg']:+.2f}%)")
+        score_str = f"+{r['score']}" if r["score"] >= 0 else str(r["score"])
+        lines.append(f"  {icon} {name}: {score_str}점  {price_str} ({r['chg']:+.2f}%)")
 
     # ④ 강한 신호 종목 상세
     strong = [(nm, tk, r) for nm, tk, r in results if abs(r["score"]) >= 40]
@@ -168,9 +168,8 @@ def main():
             icon = {"BUY":"📈","SELL":"📉","HOLD":"➖"}.get(r["action"],"➖")
             lines.append(f"\n  {icon} *{name}* [{r['action']}]  점수:{r['score']}  RSI:{r['rsi']}  ADX:{r['adx']}")
 
-    lines.append("\n━"*16)
-    lines.append("📌 09:00 한국장 시작 | 22:30 미국장 시작")
-    lines.append("💬 종목명을 텔레그램으로 보내면 즉시 분석해드립니다")
+    lines.append("\n📌 09:00 한국장 시작 | 22:30 미국장 시작")
+    lines.append("💬 종목명 보내면 즉시 분석  |  '시황' 보내면 전체 스캔")
 
     tg("\n".join(lines))
     print("아침 브리핑 완료", flush=True)
