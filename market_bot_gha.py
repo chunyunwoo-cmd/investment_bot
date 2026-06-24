@@ -52,12 +52,25 @@ NAME_TO_TICKER.update({
     "KORU": "KORU", "SOXL": "SOXL", "MU": "MU", "NVDA": "NVDA", "AMD": "AMD",
 })
 
-# 뉴스 RSS 피드
-NEWS_FEEDS = [
-    ("https://news.google.com/rss/search?q=반도체+주가&hl=ko&gl=KR&ceid=KR:ko", "국내반도체"),
-    ("https://news.google.com/rss/search?q=코스피+증시&hl=ko&gl=KR&ceid=KR:ko", "코스피"),
-    ("https://news.google.com/rss/search?q=SOXL+KORU+semiconductor&hl=en&gl=US&ceid=US:en", "해외반도체"),
-    ("https://news.google.com/rss/search?q=Micron+earnings+semiconductor&hl=en&gl=US&ceid=US:en", "마이크론"),
+# 뉴스 RSS — 한국어만
+NEWS_QUERIES = [
+    "반도체 주가 급등 급락",
+    "코스피 코스닥 증시 속보",
+    "미국 증시 나스닥 시황",
+    "환율 달러 금리 연준",
+    "SK하이닉스 삼성전자 뉴스",
+]
+
+# 중요도 키워드
+IMPORTANT_KW = [
+    "급등","급락","폭등","폭락","급반등","급반락",
+    "실적","어닝","서프라이즈","쇼크","깜짝",
+    "금리","연준","FOMC","기준금리","인상","인하",
+    "신고가","신저가","52주","사상최고","역대",
+    "호재","악재","대규모","외국인","기관",
+    "AI","인공지능","반도체","HBM","엔비디아","마이크론",
+    "삼성전자","SK하이닉스","한미반도체","현대일렉트릭",
+    "환율","달러","관세","제재","위기","경고","충격",
 ]
 
 # ── 상태 관리 ─────────────────────────────────────────────────
@@ -226,33 +239,41 @@ def fmt_analysis(r: dict, avg_cost: float = None) -> str:
     return "\n".join(lines)
 
 # ── 뉴스 수집 ─────────────────────────────────────────────────
+def _news_importance(title: str) -> int:
+    t = title.upper()
+    return sum(1 for kw in IMPORTANT_KW if kw.upper() in t)
+
 def fetch_news(max_age_hours: int = 1) -> list:
-    """RSS 피드에서 최신 뉴스 수집"""
-    items = []
+    """한국어 뉴스만 수집, 중요도 필터링"""
+    from email.utils import parsedate_to_datetime
     cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
-    for url, category in NEWS_FEEDS:
+    seen, candidates = set(), []
+
+    for q in NEWS_QUERIES:
+        url = f"https://news.google.com/rss/search?q={requests.utils.quote(q)}&hl=ko&gl=KR&ceid=KR:ko"
         try:
             r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
-            if not r.ok:
-                continue
+            if not r.ok: continue
             root = ET.fromstring(r.content)
-            for item in root.findall(".//item")[:5]:
+            for item in root.findall(".//item")[:6]:
                 title = (item.findtext("title") or "").strip()
-                pub   = item.findtext("pubDate") or ""
-                if not title:
-                    continue
-                # 발행 시간 파싱
+                if not title or title in seen: continue
+                # 한글 비율 체크 (영어 기사 제외)
+                korean_ratio = sum(1 for c in title if '가' <= c <= '힣') / max(len(title), 1)
+                if korean_ratio < 0.2: continue
+                # 발행 시간 필터
+                pub = item.findtext("pubDate") or ""
                 try:
-                    from email.utils import parsedate_to_datetime
                     pub_dt = parsedate_to_datetime(pub).astimezone(timezone.utc)
-                    if pub_dt < cutoff:
-                        continue
+                    if pub_dt < cutoff: continue
                 except Exception:
                     pass
-                items.append({"title": title, "category": category})
+                seen.add(title)
+                candidates.append({"title": title, "importance": _news_importance(title)})
         except Exception:
-            pass
-    return items
+            continue
+
+    return sorted(candidates, key=lambda x: -x["importance"])
 
 # ── 신호 알림 ─────────────────────────────────────────────────
 def run_signal_check(state: dict) -> dict:
@@ -310,7 +331,8 @@ def run_news_check(state: dict) -> dict:
         now_kst = (datetime.now(timezone.utc) + timedelta(hours=9)).strftime("%H:%M")
         lines = [f"📰 *[{now_kst} KST] 속보*"]
         for n in new_items[:5]:
-            lines.append(f"  [{n['category']}] {n['title'][:60]}")
+            star = "🔥" if n["importance"] >= 3 else ("⚡" if n["importance"] >= 1 else "📰")
+            lines.append(f"  {star} {n['title'][:70]}")
         tg_send("\n".join(lines))
         seen.update(n["title"] for n in new_items)
         # seen_news는 최대 200개 유지
@@ -375,7 +397,8 @@ def handle_telegram_commands(state: dict) -> dict:
             if news:
                 lines = [f"📰 *[{now_kst} KST] 최신 뉴스*"]
                 for n in news[:8]:
-                    lines.append(f"  [{n['category']}] {n['title'][:60]}")
+                    star = "🔥" if n["importance"] >= 3 else ("⚡" if n["importance"] >= 1 else "📰")
+                    lines.append(f"  {star} {n['title'][:70]}")
                 tg_send("\n".join(lines), chat_id)
             else:
                 tg_send("최근 3시간 내 새 뉴스가 없습니다.", chat_id)

@@ -102,19 +102,65 @@ def analyze(ticker: str) -> dict:
     except Exception as e:
         print(f"  [{ticker}] 오류: {e}", flush=True); return {}
 
-def get_news(query: str, hours=12, max_n=4) -> list:
-    url = f"https://news.google.com/rss/search?q={requests.utils.quote(query)}&hl=ko&gl=KR&ceid=KR:ko"
-    try:
-        r = requests.get(url, timeout=8, headers={"User-Agent":"Mozilla/5.0"})
-        if not r.ok: return []
-        root = ET.fromstring(r.content)
-        titles = []
-        for item in root.findall(".//item")[:max_n]:
-            t = (item.findtext("title") or "").strip()
-            if t: titles.append(t)
-        return titles
-    except Exception:
-        return []
+# 중요도 판단 키워드
+IMPORTANT_KW = [
+    "급등","급락","폭등","폭락","급변","급반등","급반락",
+    "실적","어닝","서프라이즈","쇼크","어닝쇼크","깜짝실적",
+    "금리","연준","Fed","FOMC","기준금리","인상","인하",
+    "신고가","52주","역대최고","사상최고","신저가",
+    "호재","악재","수급","외국인","기관","대규모",
+    "AI","인공지능","반도체","HBM","엔비디아","마이크론",
+    "삼성전자","SK하이닉스","한미반도체","현대일렉트릭",
+    "수출","환율","달러","무역","관세","제재",
+    "합병","인수","분할","상장","상폐","감산","증산",
+    "주의","경고","위기","붕괴","충격","공포",
+]
+
+def score_news(title: str) -> int:
+    """제목 중요도 점수 (키워드 매칭 수)"""
+    t = title.upper()
+    return sum(1 for kw in IMPORTANT_KW if kw.upper() in t)
+
+def fetch_important_news(hours=14, top_n=5) -> list:
+    """한국어 뉴스만, 중요도 순 정렬해서 반환"""
+    queries = [
+        "미국 증시 간밤 시황 반도체",
+        "코스피 코스닥 증시 오늘 전망",
+        "반도체 주가 뉴스 SK하이닉스 삼성전자",
+        "미국 나스닥 다우 S&P 시황",
+        "환율 달러 원 금리 연준",
+        "SOXL KORU 미국 ETF",
+    ]
+    seen, candidates = set(), []
+    for q in queries:
+        url = f"https://news.google.com/rss/search?q={requests.utils.quote(q)}&hl=ko&gl=KR&ceid=KR:ko"
+        try:
+            r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
+            if not r.ok: continue
+            root = ET.fromstring(r.content)
+            for item in root.findall(".//item")[:6]:
+                title = (item.findtext("title") or "").strip()
+                # 영어 제목 필터링 (한글 포함 여부로 판단)
+                if not title or title in seen: continue
+                korean_ratio = sum(1 for c in title if '가' <= c <= '힣') / max(len(title), 1)
+                if korean_ratio < 0.2: continue   # 한글 20% 미만 제목 제외
+                seen.add(title)
+                candidates.append((score_news(title), title))
+        except Exception:
+            continue
+
+    # 중요도 높은 순 정렬, 중요도 0인 뉴스는 최대 2개만 포함
+    candidates.sort(key=lambda x: -x[0])
+    result = []
+    zero_count = 0
+    for score, title in candidates:
+        if score == 0:
+            if zero_count >= 2: continue
+            zero_count += 1
+        result.append((score, title))
+        if len(result) >= top_n:
+            break
+    return result
 
 def main():
     now_kst = (datetime.now(timezone.utc) + timedelta(hours=9))
@@ -135,13 +181,15 @@ def main():
             pnl_str = f" | 평단대비 {pnl:+.1f}%"
         lines.append(f"  {icon} {nm}: ${r['price']:.2f} ({r['chg']:+.2f}%){pnl_str}")
 
-    # ② 뉴스 요약
-    lines.append("\n② 간밤 뉴스")
-    us_news = get_news("semiconductor stocks overnight futures", hours=12)
-    kr_news = get_news("반도체 증시 오늘 전망", hours=12)
-    all_news = (us_news[:2] + kr_news[:3])
-    for n in all_news[:4]:
-        lines.append(f"  📰 {n[:65]}")
+    # ② 뉴스 요약 (한국어, 중요도 순)
+    lines.append("\n② 주요 뉴스 (중요도 순)")
+    news_items = fetch_important_news(hours=14, top_n=5)
+    if news_items:
+        for imp_score, title in news_items:
+            star = "🔥" if imp_score >= 3 else ("⚡" if imp_score >= 1 else "📰")
+            lines.append(f"  {star} {title[:70]}")
+    else:
+        lines.append("  📰 최근 주요 뉴스 없음")
 
     # ③ 전 종목 점수 스캔
     lines.append("\n③ 종목 스캔  [점수 기준: +40이상=강매수 / +30=매수 / -30=매도 / -40이하=강매도 / 나머지=관망]")
