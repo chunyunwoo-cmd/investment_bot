@@ -12,7 +12,7 @@ import pandas as pd
 import numpy as np
 
 # ── 설정 (환경변수 우선, 없으면 기본값) ──────────────────────
-AVG_COST    = float(os.environ.get("KORU_AVG_COST", "773.96"))
+AVG_COST    = float(os.environ.get("KORU_AVG_COST", "773.96").strip('﻿').strip())
 ADD_BUY_LV  = AVG_COST * 0.93
 STOP_LOSS   = AVG_COST * 0.88
 PROFIT_1    = AVG_COST * 1.10
