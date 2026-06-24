@@ -2,7 +2,8 @@ name: 아침 브리핑 (07:50 KST)
 
 on:
   schedule:
-    - cron: '50 22 * * *'   # 22:50 UTC = 07:50 KST
+    - cron: '50 22 * * *'   # 22:50 UTC = 07:50 KST (주 트리거)
+    - cron: '0 23 * * *'    # 23:00 UTC = 08:00 KST (백업: 07:50 밀릴 경우 대비)
   workflow_dispatch:
 
 jobs:
@@ -23,9 +24,9 @@ jobs:
 
       - name: 아침 브리핑 실행
         env:
-          TG_BOT_TOKEN:   ${{ secrets.TG_BOT_TOKEN }}
-          TG_CHAT_ID:     ${{ secrets.TG_CHAT_ID }}
-          KORU_AVG_COST:  ${{ secrets.KORU_AVG_COST }}
-          PYTHONUTF8:     "1"
+          TG_BOT_TOKEN:     ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID:       ${{ secrets.TG_CHAT_ID }}
+          KORU_AVG_COST:    ${{ secrets.KORU_AVG_COST }}
+          PYTHONUTF8:       "1"
           PYTHONIOENCODING: "utf-8"
         run: python morning_brief_gha.py
