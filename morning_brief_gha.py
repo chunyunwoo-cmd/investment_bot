@@ -69,6 +69,7 @@ def analyze(ticker: str) -> dict:
         s20  = float(c.rolling(20).mean().iloc[-1])
         s60  = float(c.rolling(60).mean().iloc[-1])
         price= float(c.iloc[-1]); prev = float(c.iloc[-2])
+        if np.isnan(price) or np.isnan(prev) or prev == 0: return {}
         chg  = (price-prev)/prev*100
 
         mult = 1.2 if adx>=30 else (1.0 if adx>=20 else 0.7)

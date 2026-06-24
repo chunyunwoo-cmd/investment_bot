@@ -154,6 +154,7 @@ def analyze_ticker(ticker: str, name: str) -> dict:
         ps5   = float(sma5.iloc[-2]); ps20 = float(sma20.iloc[-2])
         price = float(c.iloc[-1])
         prev  = float(c.iloc[-2])
+        if np.isnan(price) or np.isnan(prev) or prev == 0: return {}
         chg   = (price - prev) / prev * 100
 
         mult  = 1.2 if adx >= 30 else (1.0 if adx >= 20 else 0.7)
